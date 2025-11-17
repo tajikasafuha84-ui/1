@@ -1,32 +1,85 @@
-name: Frontend CI
+name: Frontend CI (cached, parallel jobs)
+
 on:
   pull_request:
     branches: [ main ]
   push:
     branches: [ feature/frontend, main ]
 
+# 并行运行 lint / test / build 三个 job；所有 run 步骤默认在 frontend 目录下执行
+defaults:
+  run:
+    working-directory: frontend
+
 jobs:
-  build:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (with npm cache)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18.x
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm install
+
+      - name: Run lint (if configured)
+        run: |
+          if npm run | grep -q "lint"; then
+            npm run lint
+          else
+            echo "No lint script configured; skipping"
+          fi
+
+  test:
+    name: Test (matrix)
     runs-on: ubuntu-latest
     strategy:
       matrix:
         node-version: [18.x]
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js (with npm cache)
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
-      - name: Install dependencies
-        working-directory: frontend
+      - name: Install deps
+        run: npm install
+
+      - name: Run tests (if configured)
+        run: |
+          if npm run | grep -q "test"; then
+            npm test -- --ci || npm test
+          else
+            echo "No test script configured; skipping"
+          fi
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (with npm cache)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18.x
+          cache: 'npm'
+
+      - name: Install deps
         run: npm install
 
       - name: Build frontend
-        working-directory: frontend
         run: npm run build
 
       - name: Upload build artifact
@@ -38,5 +91,7 @@ jobs:
       - name: Verify build exists
         if: always()
         run: |
+          echo "Listing frontend directory"
           ls -la frontend || true
+          echo "Listing build dir"
           ls -la frontend/dist || echo "No dist directory"
